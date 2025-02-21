@@ -7,6 +7,7 @@ from minio import S3Error, Minio
 from minio.versioningconfig import VersioningConfig
 
 from wyl import response_headers_to_json
+from wyl.generate_samples import generate_pdf
 
 load_dotenv('.env.minio')
 
@@ -18,7 +19,11 @@ BUCKET_NAME = os.getenv('BUCKET_NAME')
 
 
 class MinioClient:
-    def __init__(self, bucket_name=BUCKET_NAME):
+    objects_dirpath = None
+    buckets_dirpath = None
+
+    def __init__(self, bucket_name=BUCKET_NAME, debug=False):
+        self.debug = debug
         self.bucket_name = bucket_name
         self.client = Minio(
             MINIO_ENDPOINT,
@@ -42,10 +47,23 @@ class MinioClient:
 
         self.objects_dirpath = os.path.join(os.getcwd(), "objects")
         self.buckets_dirpath = os.path.join(self.objects_dirpath, bucket_name)
+
         if not os.path.isdir(self.objects_dirpath):
             os.makedirs(self.objects_dirpath, exist_ok=True)
         if not os.path.isdir(self.buckets_dirpath):
             os.makedirs(self.buckets_dirpath, exist_ok=True)
+
+        buckets = self.list_buckets()
+        objects = self.list_objects()
+
+        if self.debug:
+            print(" -- objects")
+            for object_ in objects:
+                print(object_)
+
+            print("")
+            print(" -- buckets")
+            print(buckets)
 
     def list_buckets(self):
         bucket_list = []
@@ -122,7 +140,9 @@ class MinioClient:
         except S3Error as e:
             print(f"An error occurred: {e}")
 
-    def upload_pdf(self, pdf_filepath, object_name, bucket_name, content_type="application/pdf"):
+    def upload_pdf(self, pdf_filepath, object_name, bucket_name=None, content_type="application/pdf"):
+        if bucket_name is None:
+            bucket_name = self.bucket_name
         try:
             # Upload PDF file (MinIO will automatically handle versioning)
             self.client.fput_object(bucket_name=bucket_name, object_name=object_name, file_path=pdf_filepath,
@@ -131,6 +151,11 @@ class MinioClient:
 
         except S3Error as e:
             print(f"MinIO error: {e}")
+
+    def do_pdf_upload(self, pdf_filepath="sample.pdf", object_name="sample.pdf", bucket_name=None):
+        generate_pdf(pdf_filepath)
+        bucket_name = bucket_name if bucket_name is not None else self.bucket_name
+        self.upload_pdf(pdf_filepath=pdf_filepath, object_name=object_name, bucket_name=bucket_name)
 
     @staticmethod
     def write_response_headers_file(filename, base_dir, response):
