@@ -22,7 +22,7 @@ class MinioClient:
     objects_dirpath = None
     buckets_dirpath = None
 
-    def __init__(self, bucket_name=BUCKET_NAME, debug=False):
+    def __init__(self, bucket_name=BUCKET_NAME, clear_local=True, debug=False):
         self.debug = debug
         self.bucket_name = bucket_name
         self.client = Minio(
@@ -37,21 +37,34 @@ class MinioClient:
             self.client.make_bucket(self.bucket_name)
             print(f"Bucket {self.bucket_name} created.")
 
-        config = self.client.get_bucket_versioning(self.bucket_name)
-        if config.status != "Enabled":
-            self.client.set_bucket_versioning(self.bucket_name, VersioningConfig())
+        if self.debug:
             config = self.client.get_bucket_versioning(self.bucket_name)
-            print(f"Versioning enabled: {config.status}")
-        else:
-            print(f"Versioning is already enabled for bucket {self.bucket_name}")
+            if config.status != "Enabled":
+                self.client.set_bucket_versioning(self.bucket_name, VersioningConfig())
+                config = self.client.get_bucket_versioning(self.bucket_name)
+                print(f"DEBUG: Versioning enabled: {config.status}")
+            else:
+                print(f"DEBUG: Versioning is already enabled for bucket {self.bucket_name}")
 
         self.objects_dirpath = os.path.join(os.getcwd(), "objects")
         self.buckets_dirpath = os.path.join(self.objects_dirpath, bucket_name)
 
         if not os.path.isdir(self.objects_dirpath):
             os.makedirs(self.objects_dirpath, exist_ok=True)
+
         if not os.path.isdir(self.buckets_dirpath):
             os.makedirs(self.buckets_dirpath, exist_ok=True)
+
+        if clear_local:
+            for folder in os.listdir(self.buckets_dirpath):
+                for folder_file in os.listdir(os.path.join(self.buckets_dirpath, folder)):
+                    file_full_path = os.path.join(self.buckets_dirpath, folder, folder_file)
+                    if os.path.isfile(file_full_path):
+                        if self.debug:
+                            print(f"DEBUG: clear_local: deleting file: {file_full_path}", end='')
+                        os.unlink(file_full_path)
+                        if self.debug:
+                            print('...done')
 
         buckets = self.list_buckets()
         objects = self.list_objects()
@@ -147,13 +160,15 @@ class MinioClient:
             # Upload PDF file (MinIO will automatically handle versioning)
             self.client.fput_object(bucket_name=bucket_name, object_name=object_name, file_path=pdf_filepath,
                                     content_type=content_type)
-            print(f"File {pdf_filepath} uploaded successfully as {object_name}.")
+            if self.debug:
+                print(f"DEBUG: File {pdf_filepath} uploaded successfully as {object_name}.")
 
         except S3Error as e:
             print(f"MinIO error: {e}")
 
-    def do_pdf_upload(self, pdf_filepath="sample.pdf", object_name="sample.pdf", bucket_name=None):
-        generate_pdf(pdf_filepath)
+    def do_pdf_upload(self, pdf_filepath="sample.pdf", object_name="sample.pdf", generate_pdf_=True, bucket_name=None):
+        if generate_pdf_:
+            generate_pdf(pdf_filepath)
         bucket_name = bucket_name if bucket_name is not None else self.bucket_name
         self.upload_pdf(pdf_filepath=pdf_filepath, object_name=object_name, bucket_name=bucket_name)
 
